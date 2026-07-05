@@ -1,0 +1,20 @@
+package:
+  name: aff
+  dependencies:
+    - arrays
+    - bifunctors
+    - control
+    - datetime
+    - effect
+    - either
+    - exceptions
+    - foldable-traversable
+    - functions
+    - maybe
+    - newtype
+    - parallel
+    - prelude
+    - refs
+    - tailrec
+    - transformers
+    - unsafe-coerce
