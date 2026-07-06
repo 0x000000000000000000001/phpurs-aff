@@ -1,0 +1,6 @@
+{
+    "name": "phpurs/aff",
+    "require": {
+        "revolt/event-loop": "^1.0"
+    }
+}
