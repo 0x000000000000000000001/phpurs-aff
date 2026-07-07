@@ -4,7 +4,7 @@ $_pure = function($x) use (&$_pure) { return function() use(&$x) { return $x; };
 $_map = function($f, $aff = null) use (&$_map) {
     if (func_num_args() < 2) {
         $__args = func_get_args();
-        return function(...$more) use ($__args, &$_pure) {
+        return function(...$more) use ($__args, &$_map) {
 
             return $_map(...array_merge($__args, $more));
         };
@@ -14,7 +14,7 @@ $_map = function($f, $aff = null) use (&$_map) {
 $_bind = function($aff, $f = null) use (&$_bind) {
     if (func_num_args() < 2) {
         $__args = func_get_args();
-        return function(...$more) use ($__args, &$_map) {
+        return function(...$more) use ($__args, &$_bind) {
 
             return $_bind(...array_merge($__args, $more));
         };
@@ -26,7 +26,7 @@ $_makeFiber = function($util, $aff) use (&$_makeFiber) { return function() use(&
 $_fork = function($immediate, $aff = null) use (&$_fork) {
     if (func_num_args() < 2) {
         $__args = func_get_args();
-        return function(...$more) use ($__args, &$_bind) {
+        return function(...$more) use ($__args, &$_fork) {
 
             return $_fork(...array_merge($__args, $more));
         };
@@ -41,7 +41,7 @@ $_throwError = function($err) use (&$_throwError) { return function() use(&$err)
 $_catchError = function($aff, $f = null) use (&$_catchError) {
     if (func_num_args() < 2) {
         $__args = func_get_args();
-        return function(...$more) use ($__args, &$_liftEffect) {
+        return function(...$more) use ($__args, &$_catchError) {
 
             return $_catchError(...array_merge($__args, $more));
         };
@@ -53,7 +53,7 @@ $_parAffMap = $_map;
 $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
     if (func_num_args() < 2) {
         $__args = func_get_args();
-        return function(...$more) use ($__args, &$_makeFiber) {
+        return function(...$more) use ($__args, &$_parAffApply) {
 
             return $_parAffApply(...array_merge($__args, $more));
         };
@@ -64,7 +64,7 @@ $_sequential = function($aff) use (&$_sequential) { return $aff; };
 $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
     if (func_num_args() < 2) {
         $__args = func_get_args();
-        return function(...$more) use ($__args, &$_fork) {
+        return function(...$more) use ($__args, &$_parAffAlt) {
 
             return $_parAffAlt(...array_merge($__args, $more));
         };
