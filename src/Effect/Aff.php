@@ -64,13 +64,13 @@ $makeAff = function($k) use (&$makeAff) {
             return function() use(&$fiber, &$isDone, &$result, &$exception, &$res) { 
                 $isDone = true;
                 if (isset($res->tag) && $res->tag === 'Left') {
-                    $exception = $res->value0;
+                    $exception = $res->v0;
                 } else if (isset($res->tag) && $res->tag === 'Right') {
-                    $result = $res->value0;
+                    $result = $res->v0;
                 } else if (isset($res->constructor) && $res->constructor === 'Left') {
-                    $exception = $res->value0;
+                    $exception = $res->v0;
                 } else if (isset($res->constructor) && $res->constructor === 'Right') {
-                    $result = $res->value0;
+                    $result = $res->v0;
                 } else {
                     $result = $res;
                 }
