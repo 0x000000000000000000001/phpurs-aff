@@ -63,6 +63,8 @@ $_makeAff = function($ffiUtil, $k) use (&$_makeAff) {
         $canceler = $k(function($res) use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception) { 
             return function() use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception, &$res) { 
                 $isDone = true;
+                // TODO: Refactor FFI to avoid stdClass coupling and name mangling. 
+                // See issue: https://github.com/purescript-contrib/purescript-aff/issues/221
                 if (($ffiUtil->ismajLeft)($res)) {
                     $exception = ($ffiUtil->frommajLeft)($res);
                 } else {
