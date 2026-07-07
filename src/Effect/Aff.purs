@@ -340,7 +340,7 @@ supervise aff =
 
   acquire :: Effect (Supervised a)
   acquire = do
-    sup <- Fn.runFn2 _makeSupervisedFiber ffiUtil aff
+    sup <- Fn.runFn6 _makeSupervisedFiber isLeft unsafeFromLeft unsafeFromRight Left Right aff
     case sup.fiber of Fiber f -> f.run
     pure sup
 
@@ -356,8 +356,8 @@ foreign import _liftEffect :: forall a. Effect a -> Aff a
 foreign import _parAffMap :: forall a b. (a -> b) -> ParAff a -> ParAff b
 foreign import _parAffApply :: forall a b. ParAff (a -> b) -> ParAff a -> ParAff b
 foreign import _parAffAlt :: forall a. ParAff a -> ParAff a -> ParAff a
-foreign import _makeFiber :: forall a. Fn.Fn2 FFIUtil (Aff a) (Effect (Fiber a))
-foreign import _makeSupervisedFiber :: forall a. Fn.Fn2 FFIUtil (Aff a) (Effect (Supervised a))
+foreign import _makeFiber :: forall a l r. Fn.Fn6 (Either l r -> Boolean) (Either l r -> l) (Either l r -> r) (l -> Either l r) (r -> Either l r) (Aff a) (Effect (Fiber a))
+foreign import _makeSupervisedFiber :: forall a l r. Fn.Fn6 (Either l r -> Boolean) (Either l r -> l) (Either l r -> r) (l -> Either l r) (r -> Either l r) (Aff a) (Effect (Supervised a))
 foreign import _killAll :: Fn.Fn3 Error Supervisor (Effect Unit) (Effect Canceler)
 foreign import _sequential :: ParAff ~> Aff
 
@@ -376,42 +376,25 @@ foreign import generalBracket :: forall a b. Aff a -> BracketConditions a b -> (
 -- | `Canceler` effect should be returned to cancel the pending action. The
 -- | supplied callback may be invoked only once. Subsequent invocation are
 -- | ignored.
-foreign import _makeAff :: forall a. Fn.Fn2 FFIUtil ((Either Error a -> Effect Unit) -> Effect Canceler) (Aff a)
+foreign import _makeAff :: forall a l r. Fn.Fn6 (Either l r -> Boolean) (Either l r -> l) (Either l r -> r) (l -> Either l r) (r -> Either l r) ((Either Error a -> Effect Unit) -> Effect Canceler) (Aff a)
 
 makeAff :: forall a. ((Either Error a -> Effect Unit) -> Effect Canceler) -> Aff a
-makeAff k = Fn.runFn2 _makeAff ffiUtil k
+makeAff k = Fn.runFn6 _makeAff isLeft unsafeFromLeft unsafeFromRight Left Right k
 
 makeFiber :: forall a. Aff a -> Effect (Fiber a)
-makeFiber aff = Fn.runFn2 _makeFiber ffiUtil aff
+makeFiber aff = Fn.runFn6 _makeFiber isLeft unsafeFromLeft unsafeFromRight Left Right aff
 
-newtype FFIUtil = FFIUtil
-  { isLeft :: forall a b. Either a b -> Boolean
-  , fromLeft :: forall a b. Either a b -> a
-  , fromRight :: forall a b. Either a b -> b
-  , left :: forall a b. a -> Either a b
-  , right :: forall a b. b -> Either a b
-  }
+isLeft :: forall a b. Either a b -> Boolean
+isLeft = case _ of
+  Left _ -> true
+  Right _ -> false
 
-ffiUtil :: FFIUtil
-ffiUtil = FFIUtil
-  { isLeft
-  , fromLeft: unsafeFromLeft
-  , fromRight: unsafeFromRight
-  , left: Left
-  , right: Right
-  }
-  where
-  isLeft :: forall a b. Either a b -> Boolean
-  isLeft = case _ of
-    Left _ -> true
-    Right _ -> false
+unsafeFromLeft :: forall a b. Either a b -> a
+unsafeFromLeft = case _ of
+  Left a -> a
+  Right _ -> unsafeCrashWith "unsafeFromLeft: Right"
 
-  unsafeFromLeft :: forall a b. Either a b -> a
-  unsafeFromLeft = case _ of
-    Left a -> a
-    Right _ -> unsafeCrashWith "unsafeFromLeft: Right"
-
-  unsafeFromRight :: forall a b. Either a b -> b
-  unsafeFromRight = case _ of
-    Right a -> a
-    Left _ -> unsafeCrashWith "unsafeFromRight: Left"
+unsafeFromRight :: forall a b. Either a b -> b
+unsafeFromRight = case _ of
+  Right a -> a
+  Left _ -> unsafeCrashWith "unsafeFromRight: Left"

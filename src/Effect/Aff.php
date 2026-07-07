@@ -20,7 +20,13 @@ $_bind = function($aff, $f = null) use (&$_bind) {
     return function() use(&$aff, &$f) { return $f($aff())(); };
 };
 $_liftEffect = function($eff) use (&$_liftEffect) { return $eff; };
-$_makeFiber = function($util, $aff) use (&$_makeFiber) { 
+$_makeFiber = function($isLeft, $fromLeft, $fromRight, $left, $right, $aff = null) use (&$_makeFiber) { 
+    if (func_num_args() < 6) {
+        $__args = func_get_args();
+        return function(...$more) use ($__args, &$_makeFiber) {
+            return $_makeFiber(...array_merge($__args, $more));
+        };
+    }
     return function() use(&$aff) { 
         $fiber = new \Fiber($aff); 
         $fiber->start(); 
@@ -53,22 +59,26 @@ $_delay = function($right, $ms) use (&$_delay) {
 $_makeSupervisedFiber = $_makeFiber;
 $_killAll = function($err, $sup, $cb) use (&$_killAll) { return function() { return function(){}; }; };
 
-$_makeAff = function($ffiUtil, $k) use (&$_makeAff) { 
-    return function() use(&$ffiUtil, &$k) { 
+$_makeAff = function($isLeft, $fromLeft, $fromRight, $left, $right, $k = null) use (&$_makeAff) { 
+    if (func_num_args() < 6) {
+        $__args = func_get_args();
+        return function(...$more) use ($__args, &$_makeAff) {
+            return $_makeAff(...array_merge($__args, $more));
+        };
+    }
+    return function() use(&$isLeft, &$fromLeft, &$fromRight, &$k) { 
         $fiber = \Fiber::getCurrent(); 
         $isDone = false;
         $result = null;
         $exception = null;
 
-        $canceler = $k(function($res) use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception) { 
-            return function() use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception, &$res) { 
+        $canceler = $k(function($res) use(&$isLeft, &$fromLeft, &$fromRight, &$fiber, &$isDone, &$result, &$exception) { 
+            return function() use(&$isLeft, &$fromLeft, &$fromRight, &$fiber, &$isDone, &$result, &$exception, &$res) { 
                 $isDone = true;
-                // TODO: Refactor FFI to avoid stdClass coupling. 
-                // See issue: https://github.com/purescript-contrib/purescript-aff/issues/221
-                if (($ffiUtil->isLeft)($res)) {
-                    $exception = ($ffiUtil->fromLeft)($res);
+                if ($isLeft($res)) {
+                    $exception = $fromLeft($res);
                 } else {
-                    $result = ($ffiUtil->fromRight)($res);
+                    $result = $fromRight($res);
                 }
                 
                 if ($fiber && $fiber->isSuspended()) { 
