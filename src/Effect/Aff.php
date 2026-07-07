@@ -63,10 +63,10 @@ $_makeAff = function($ffiUtil, $k) use (&$_makeAff) {
         $canceler = $k(function($res) use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception) { 
             return function() use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception, &$res) { 
                 $isDone = true;
-                if (($ffiUtil->isLeft)($res)) {
-                    $exception = ($ffiUtil->fromLeft)($res);
+                if (($ffiUtil->ismajLeft)($res)) {
+                    $exception = ($ffiUtil->frommajLeft)($res);
                 } else {
-                    $result = ($ffiUtil->fromRight)($res);
+                    $result = ($ffiUtil->frommajRight)($res);
                 }
                 
                 if ($fiber && $fiber->isSuspended()) { 
