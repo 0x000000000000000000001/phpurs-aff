@@ -1,4 +1,5 @@
 <?php
+if (file_exists(__DIR__ . "/../../vendor/autoload.php")) require_once __DIR__ . "/../../vendor/autoload.php";
 
 $_pure = function($x) use (&$_pure) { return function() use(&$x) { return $x; }; };
 $_map = function($f, $aff = null) use (&$_map) {
