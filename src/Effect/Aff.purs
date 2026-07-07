@@ -376,7 +376,10 @@ foreign import generalBracket :: forall a b. Aff a -> BracketConditions a b -> (
 -- | `Canceler` effect should be returned to cancel the pending action. The
 -- | supplied callback may be invoked only once. Subsequent invocation are
 -- | ignored.
-foreign import makeAff :: forall a. ((Either Error a -> Effect Unit) -> Effect Canceler) -> Aff a
+foreign import _makeAff :: forall a. Fn.Fn2 FFIUtil ((Either Error a -> Effect Unit) -> Effect Canceler) (Aff a)
+
+makeAff :: forall a. ((Either Error a -> Effect Unit) -> Effect Canceler) -> Aff a
+makeAff k = Fn.runFn2 _makeAff ffiUtil k
 
 makeFiber :: forall a. Aff a -> Effect (Fiber a)
 makeFiber aff = Fn.runFn2 _makeFiber ffiUtil aff

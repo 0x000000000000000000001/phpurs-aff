@@ -53,26 +53,20 @@ $_delay = function($right, $ms) use (&$_delay) {
 $_makeSupervisedFiber = $_makeFiber;
 $_killAll = function($err, $sup, $cb) use (&$_killAll) { return function() { return function(){}; }; };
 
-$makeAff = function($k) use (&$makeAff) { 
-    return function() use(&$k) { 
+$_makeAff = function($ffiUtil, $k) use (&$_makeAff) { 
+    return function() use(&$ffiUtil, &$k) { 
         $fiber = \Fiber::getCurrent(); 
         $isDone = false;
         $result = null;
         $exception = null;
 
-        $canceler = $k(function($res) use(&$fiber, &$isDone, &$result, &$exception) { 
-            return function() use(&$fiber, &$isDone, &$result, &$exception, &$res) { 
+        $canceler = $k(function($res) use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception) { 
+            return function() use(&$ffiUtil, &$fiber, &$isDone, &$result, &$exception, &$res) { 
                 $isDone = true;
-                if (isset($res->tag) && $res->tag === 'Left') {
-                    $exception = $res->v0;
-                } else if (isset($res->tag) && $res->tag === 'Right') {
-                    $result = $res->v0;
-                } else if (isset($res->constructor) && $res->constructor === 'Left') {
-                    $exception = $res->v0;
-                } else if (isset($res->constructor) && $res->constructor === 'Right') {
-                    $result = $res->v0;
+                if ($ffiUtil->isLeft($res)) {
+                    $exception = $ffiUtil->fromLeft($res);
                 } else {
-                    $result = $res;
+                    $result = $ffiUtil->fromRight($res);
                 }
                 
                 if ($fiber && $fiber->isSuspended()) { 
@@ -284,7 +278,7 @@ $exports['_fork'] = $_fork;
 $exports['_delay'] = $_delay;
 $exports['_makeSupervisedFiber'] = $_makeSupervisedFiber;
 $exports['_killAll'] = $_killAll;
-$exports['makeAff'] = $makeAff;
+$exports['_makeAff'] = $_makeAff;
 $exports['_throwError'] = $_throwError;
 $exports['_catchError'] = $_catchError;
 $exports['generalBracket'] = $generalBracket;
