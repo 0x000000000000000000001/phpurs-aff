@@ -118,7 +118,15 @@ $_catchError = function($aff, $f = null) use (&$_catchError) {
     }
     return function() use(&$aff, &$f) { try { return $aff(); } catch (\Throwable $e) { return $f($e)(); } };
 };
-$generalBracket = function($acq) use (&$generalBracket) { return function($cond) { return function($use) use(&$acq) { return function() use(&$acq, &$use) { $res = $acq(); return $use($res)(); }; }; }; };
+$generalBracket = function($acq, $cond = null, $use = null) use (&$generalBracket) {
+    if (func_num_args() < 3) {
+        $__args = func_get_args();
+        return function(...$more) use ($__args, &$generalBracket) {
+            return $generalBracket(...array_merge($__args, $more));
+        };
+    }
+    return function() use(&$acq, &$use) { $res = $acq(); return $use($res)(); }; 
+};
 $_parAffMap = $_map;
 
 $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
