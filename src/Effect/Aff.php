@@ -1,5 +1,118 @@
 <?php
 
+class PhpursAffBind {
+    public $aff;
+    public $f;
+    public function __construct($aff, $f) {
+        $this->aff = $aff;
+        $this->f = $f;
+    }
+}
+
+class PhpursAffMap {
+    public $f;
+    public $aff;
+    public function __construct($f, $aff) {
+        $this->f = $f;
+        $this->aff = $aff;
+    }
+}
+
+class PhpursAffCatch {
+    public $aff;
+    public $f;
+    public function __construct($aff, $f) {
+        $this->aff = $aff;
+        $this->f = $f;
+    }
+}
+
+class PhpursAffBracket {
+    public $acq;
+    public $use;
+    public function __construct($acq, $use) {
+        $this->acq = $acq;
+        $this->use = $use;
+    }
+}
+
+if (!function_exists('phpursRunAffTrampoline')) {
+function phpursRunAffTrampoline($aff) {
+    $current = $aff;
+    $stack = []; 
+
+    while (true) {
+        try {
+            if ($current instanceof \Closure) {
+                $res = $current();
+            } else {
+                $res = $current;
+            }
+            
+            if ($res instanceof PhpursAffBind) {
+                $stack[] = ['type' => 'bind', 'f' => $res->f];
+                $current = $res->aff;
+                continue;
+            } elseif ($res instanceof PhpursAffMap) {
+                $stack[] = ['type' => 'map', 'f' => $res->f];
+                $current = $res->aff;
+                continue;
+            } elseif ($res instanceof PhpursAffCatch) {
+                $stack[] = ['type' => 'catch', 'f' => $res->f];
+                $current = $res->aff;
+                continue;
+            } elseif ($res instanceof PhpursAffBracket) {
+                $stack[] = ['type' => 'bracket_acq', 'use' => $res->use];
+                $current = $res->acq;
+                continue;
+            }
+            
+            while (true) {
+                if (empty($stack)) {
+                    return $res;
+                }
+                
+                $frame = array_pop($stack);
+                
+                if ($frame['type'] === 'bind') {
+                    $f = $frame['f'];
+                    $current = $f($res);
+                    break;
+                } elseif ($frame['type'] === 'map') {
+                    $f = $frame['f'];
+                    $res = $f($res);
+                } elseif ($frame['type'] === 'catch') {
+                    // Success value passed through
+                } elseif ($frame['type'] === 'bracket_acq') {
+                    $use = $frame['use'];
+                    $current = $use($res);
+                    break;
+                }
+            }
+        } catch (\Throwable $e) {
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { 
+                echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; 
+                file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); 
+            }
+            
+            $caught = false;
+            while (!empty($stack)) {
+                $frame = array_pop($stack);
+                if ($frame['type'] === 'catch') {
+                    $f = $frame['f'];
+                    $current = $f($e);
+                    $caught = true;
+                    break;
+                }
+            }
+            if (!$caught) {
+                throw $e;
+            }
+        }
+    }
+}
+}
+
 $_pure = function($x) use (&$_pure) { return function() use(&$x) { return $x; }; };
 $_map = function($f, $aff = null) use (&$_map) {
     if (func_num_args() < 2) {
@@ -8,7 +121,7 @@ $_map = function($f, $aff = null) use (&$_map) {
             return $_map(...array_merge($__args, $more));
         };
     }
-    return function() use(&$f, &$aff) { return $f($aff()); };
+    return function() use(&$f, &$aff) { return new PhpursAffMap($f, $aff); };
 };
 $_bind = function($aff, $f = null) use (&$_bind) {
     if (func_num_args() < 2) {
@@ -17,7 +130,7 @@ $_bind = function($aff, $f = null) use (&$_bind) {
             return $_bind(...array_merge($__args, $more));
         };
     }
-    return function() use(&$aff, &$f) { return $f($aff())(); };
+    return function() use(&$aff, &$f) { return new PhpursAffBind($aff, $f); };
 };
 $_liftEffect = function($eff) use (&$_liftEffect) { return $eff; };
 $_makeFiber = function($isLeft, $fromLeft, $fromRight, $left, $right, $aff = null) use (&$_makeFiber) { 
@@ -28,7 +141,7 @@ $_makeFiber = function($isLeft, $fromLeft, $fromRight, $left, $right, $aff = nul
         };
     }
     return function() use(&$aff) { 
-        $fiber = new \Fiber($aff); 
+        $fiber = new \Fiber(function() use ($aff) { phpursRunAffTrampoline($aff); }); 
         $fiber->start(); 
         return (object)['run' => function() {}, 'join' => function($k) { return function() { return function(){}; }; }]; 
     }; 
@@ -41,7 +154,7 @@ $_fork = function($immediate, $aff = null) use (&$_fork) {
         };
     }
     return function() use(&$aff) { 
-        $fiber = new \Fiber($aff); 
+        $fiber = new \Fiber(function() use ($aff) { phpursRunAffTrampoline($aff); }); 
         \Revolt\EventLoop::queue(function() use(&$fiber) { $fiber->start(); }); 
         return (object)['run' => function() {}, 'join' => function($k){ return function(){ return function(){}; }; }]; 
     };
@@ -116,7 +229,7 @@ $_catchError = function($aff, $f = null) use (&$_catchError) {
             return $_catchError(...array_merge($__args, $more));
         };
     }
-    return function() use(&$aff, &$f) { try { return $aff(); } catch (\Throwable $e) { return $f($e)(); } };
+    return function() use(&$aff, &$f) { return new PhpursAffCatch($aff, $f); };
 };
 $generalBracket = function($acq, $cond = null, $use = null) use (&$generalBracket) {
     if (func_num_args() < 3) {
@@ -125,7 +238,7 @@ $generalBracket = function($acq, $cond = null, $use = null) use (&$generalBracke
             return $generalBracket(...array_merge($__args, $more));
         };
     }
-    return function() use(&$acq, &$use) { $res = $acq(); return $use($res)(); }; 
+    return function() use(&$acq, &$use) { return new PhpursAffBracket($acq, $use); }; 
 };
 $_parAffMap = $_map;
 
@@ -146,7 +259,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
 
         $f1 = new \Fiber(function() use(&$aff1, &$isDone, &$completed, &$res1, &$error, $parent) {
             try {
-                $res1 = $aff1();
+                $res1 = phpursRunAffTrampoline($aff1);
                 if (!$isDone) {
                     $completed++;
                     if ($completed === 2) {
@@ -158,7 +271,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
                         }
                     }
                 }
-            } catch (\Throwable $e) {
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 if (!$isDone) {
                     $isDone = true;
                     $error = $e;
@@ -173,7 +286,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
 
         $f2 = new \Fiber(function() use(&$aff2, &$isDone, &$completed, &$res2, &$error, $parent) {
             try {
-                $res2 = $aff2();
+                $res2 = phpursRunAffTrampoline($aff2);
                 if (!$isDone) {
                     $completed++;
                     if ($completed === 2) {
@@ -185,7 +298,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
                         }
                     }
                 }
-            } catch (\Throwable $e) {
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 if (!$isDone) {
                     $isDone = true;
                     $error = $e;
@@ -228,7 +341,7 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
 
         $f1 = new \Fiber(function() use(&$aff1, &$isDone, &$result, &$doneCount, &$error2, $parent) {
             try {
-                $res = $aff1();
+                $res = phpursRunAffTrampoline($aff1);
                 if (!$isDone) {
                     $isDone = true;
                     $result = $res;
@@ -238,7 +351,7 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
                         });
                     }
                 }
-            } catch (\Throwable $e) {
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 $doneCount++;
                 if ($doneCount === 2 && !$isDone) {
                     $isDone = true;
@@ -253,7 +366,7 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
 
         $f2 = new \Fiber(function() use(&$aff2, &$isDone, &$result, &$doneCount, &$error2, $parent) {
             try {
-                $res = $aff2();
+                $res = phpursRunAffTrampoline($aff2);
                 if (!$isDone) {
                     $isDone = true;
                     $result = $res;
@@ -263,7 +376,7 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
                         });
                     }
                 }
-            } catch (\Throwable $e) {
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 $error2 = $e;
                 $doneCount++;
                 if ($doneCount === 2 && !$isDone) {
@@ -307,3 +420,4 @@ $exports['_parAffApply'] = $_parAffApply;
 $exports['_sequential'] = $_sequential;
 $exports['_parAffAlt'] = $_parAffAlt;
 return $exports;
+
