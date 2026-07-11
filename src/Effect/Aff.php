@@ -160,9 +160,9 @@ $_fork = function($immediate, $aff = null) use (&$_fork) {
     };
 };
 $_delay = function($right, $ms) use (&$_delay) { 
-    return function() use(&$right, &$ms) { 
+    return function() use($right, $ms) { 
         $fiber = \Fiber::getCurrent(); 
-        \Revolt\EventLoop::delay($ms / 1000, function() use(&$fiber, &$right) { 
+        \Revolt\EventLoop::delay($ms / 1000, function() use(&$fiber) { 
             if ($fiber) $fiber->resume(); 
         }); 
         if ($fiber) \Fiber::suspend(); 
