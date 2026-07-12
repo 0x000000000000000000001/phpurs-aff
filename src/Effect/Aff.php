@@ -164,7 +164,22 @@ $_delay = function($right, $ms) use (&$_delay) {
         $fiber = \Fiber::getCurrent(); 
         if ($ms <= 0.0) {
             static $ticks = 0;
-            if (++$ticks % 50 === 0) {
+            static $lastYield = 0;
+            $ticks++;
+            
+            $shouldYield = false;
+            if ($ticks >= 50) {
+                $shouldYield = true;
+            } elseif ($ticks % 10 === 0) {
+                $now = \hrtime(true);
+                if ($now - $lastYield > 5000000) { // 5ms in nanoseconds
+                    $shouldYield = true;
+                }
+            }
+
+            if ($shouldYield) {
+                $ticks = 0;
+                $lastYield = \hrtime(true);
                 \Revolt\EventLoop::queue(function() use(&$fiber) { 
                     if ($fiber) $fiber->resume(); 
                 }); 
