@@ -36,7 +36,7 @@ class PhpursAffBracket {
     }
 }
 
-if (!function_exists('phpursRunAffTrampoline')) {
+if (!\function_exists('phpursRunAffTrampoline')) {
 function phpursRunAffTrampoline($aff) {
     $current = $aff;
     $stack = []; 
@@ -92,7 +92,7 @@ function phpursRunAffTrampoline($aff) {
         } catch (\Throwable $e) {
             if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { 
                 echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; 
-                file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); 
+                \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); 
             }
             
             $caught = false;
@@ -115,29 +115,29 @@ function phpursRunAffTrampoline($aff) {
 
 $_pure = function($x) use (&$_pure) { return function() use(&$x) { return $x; }; };
 $_map = function($f, $aff = null) use (&$_map) {
-    if (func_num_args() < 2) {
-        $__args = func_get_args();
+    if (\func_num_args() < 2) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_map) {
-            return $_map(...array_merge($__args, $more));
+            return $_map(...\array_merge($__args, $more));
         };
     }
     return function() use(&$f, &$aff) { return new PhpursAffMap($f, $aff); };
 };
 $_bind = function($aff, $f = null) use (&$_bind) {
-    if (func_num_args() < 2) {
-        $__args = func_get_args();
+    if (\func_num_args() < 2) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_bind) {
-            return $_bind(...array_merge($__args, $more));
+            return $_bind(...\array_merge($__args, $more));
         };
     }
     return function() use(&$aff, &$f) { return new PhpursAffBind($aff, $f); };
 };
 $_liftEffect = function($eff) use (&$_liftEffect) { return $eff; };
 $_makeFiber = function($isLeft, $fromLeft, $fromRight, $left, $right, $aff = null) use (&$_makeFiber) { 
-    if (func_num_args() < 6) {
-        $__args = func_get_args();
+    if (\func_num_args() < 6) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_makeFiber) {
-            return $_makeFiber(...array_merge($__args, $more));
+            return $_makeFiber(...\array_merge($__args, $more));
         };
     }
     return function() use(&$aff) { 
@@ -147,10 +147,10 @@ $_makeFiber = function($isLeft, $fromLeft, $fromRight, $left, $right, $aff = nul
     }; 
 };
 $_fork = function($immediate, $aff = null) use (&$_fork) {
-    if (func_num_args() < 2) {
-        $__args = func_get_args();
+    if (\func_num_args() < 2) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_fork) {
-            return $_fork(...array_merge($__args, $more));
+            return $_fork(...\array_merge($__args, $more));
         };
     }
     return function() use(&$aff) { 
@@ -162,10 +162,20 @@ $_fork = function($immediate, $aff = null) use (&$_fork) {
 $_delay = function($right, $ms) use (&$_delay) { 
     return function() use($right, $ms) { 
         $fiber = \Fiber::getCurrent(); 
-        \Revolt\EventLoop::delay($ms / 1000, function() use(&$fiber) { 
-            if ($fiber) $fiber->resume(); 
-        }); 
-        if ($fiber) \Fiber::suspend(); 
+        if ($ms <= 0.0) {
+            static $ticks = 0;
+            if (++$ticks % 50 === 0) {
+                \Revolt\EventLoop::queue(function() use(&$fiber) { 
+                    if ($fiber) $fiber->resume(); 
+                }); 
+                if ($fiber) \Fiber::suspend(); 
+            }
+        } else {
+            \Revolt\EventLoop::delay($ms / 1000, function() use(&$fiber) { 
+                if ($fiber) $fiber->resume(); 
+            }); 
+            if ($fiber) \Fiber::suspend(); 
+        }
         return $right(null); 
     }; 
 };
@@ -173,10 +183,10 @@ $_makeSupervisedFiber = $_makeFiber;
 $_killAll = function($err, $sup, $cb) use (&$_killAll) { return function() { return function(){}; }; };
 
 $_makeAff = function($isLeft, $fromLeft, $fromRight, $left, $right, $k = null) use (&$_makeAff) { 
-    if (func_num_args() < 6) {
-        $__args = func_get_args();
+    if (\func_num_args() < 6) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_makeAff) {
-            return $_makeAff(...array_merge($__args, $more));
+            return $_makeAff(...\array_merge($__args, $more));
         };
     }
     return function() use(&$isLeft, &$fromLeft, &$fromRight, &$k) { 
@@ -223,19 +233,19 @@ $_makeAff = function($isLeft, $fromLeft, $fromRight, $left, $right, $k = null) u
 
 $_throwError = function($err) use (&$_throwError) { return function() use(&$err) { throw $err; }; };
 $_catchError = function($aff, $f = null) use (&$_catchError) {
-    if (func_num_args() < 2) {
-        $__args = func_get_args();
+    if (\func_num_args() < 2) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_catchError) {
-            return $_catchError(...array_merge($__args, $more));
+            return $_catchError(...\array_merge($__args, $more));
         };
     }
     return function() use(&$aff, &$f) { return new PhpursAffCatch($aff, $f); };
 };
 $generalBracket = function($acq, $cond = null, $use = null) use (&$generalBracket) {
-    if (func_num_args() < 3) {
-        $__args = func_get_args();
+    if (\func_num_args() < 3) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$generalBracket) {
-            return $generalBracket(...array_merge($__args, $more));
+            return $generalBracket(...\array_merge($__args, $more));
         };
     }
     return function() use(&$acq, &$use) { return new PhpursAffBracket($acq, $use); }; 
@@ -243,10 +253,10 @@ $generalBracket = function($acq, $cond = null, $use = null) use (&$generalBracke
 $_parAffMap = $_map;
 
 $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
-    if (func_num_args() < 2) {
-        $__args = func_get_args();
+    if (\func_num_args() < 2) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_parAffApply) {
-            return $_parAffApply(...array_merge($__args, $more));
+            return $_parAffApply(...\array_merge($__args, $more));
         };
     }
     return function() use(&$aff1, &$aff2) { 
@@ -271,7 +281,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
                         }
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 if (!$isDone) {
                     $isDone = true;
                     $error = $e;
@@ -298,7 +308,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
                         }
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 if (!$isDone) {
                     $isDone = true;
                     $error = $e;
@@ -326,10 +336,10 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
 $_sequential = function($aff) use (&$_sequential) { return $aff; };
 
 $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
-    if (func_num_args() < 2) {
-        $__args = func_get_args();
+    if (\func_num_args() < 2) {
+        $__args = \func_get_args();
         return function(...$more) use ($__args, &$_parAffAlt) {
-            return $_parAffAlt(...array_merge($__args, $more));
+            return $_parAffAlt(...\array_merge($__args, $more));
         };
     }
     return function() use(&$aff1, &$aff2) { 
@@ -351,7 +361,7 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
                         });
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 $doneCount++;
                 if ($doneCount === 2 && !$isDone) {
                     $isDone = true;
@@ -376,7 +386,7 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
                         });
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 $error2 = $e;
                 $doneCount++;
                 if ($doneCount === 2 && !$isDone) {
