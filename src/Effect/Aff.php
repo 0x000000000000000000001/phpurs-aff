@@ -133,8 +133,8 @@ $_bind = function($aff, $f = null) use (&$_bind) {
     return function() use(&$aff, &$f) { return new PhpursAffBind($aff, $f); };
 };
 $_liftEffect = function($eff) use (&$_liftEffect) { return $eff; };
-$_makeFiber = function($isLeft, $fromLeft, $fromRight, $left, $right, $aff = null) use (&$_makeFiber) { 
-    if (\func_num_args() < 6) {
+$_makeFiber = function($util, $aff = null) use (&$_makeFiber) { 
+    if (\func_num_args() < 2) {
         $__args = \func_get_args();
         return function(...$more) use ($__args, &$_makeFiber) {
             return $_makeFiber(...\array_merge($__args, $more));
@@ -197,26 +197,20 @@ $_delay = function($right, $ms) use (&$_delay) {
 $_makeSupervisedFiber = $_makeFiber;
 $_killAll = function($err, $sup, $cb) use (&$_killAll) { return function() { return function(){}; }; };
 
-$_makeAff = function($isLeft, $fromLeft, $fromRight, $left, $right, $k = null) use (&$_makeAff) { 
-    if (\func_num_args() < 6) {
-        $__args = \func_get_args();
-        return function(...$more) use ($__args, &$_makeAff) {
-            return $_makeAff(...\array_merge($__args, $more));
-        };
-    }
-    return function() use(&$isLeft, &$fromLeft, &$fromRight, &$k) { 
+$_makeAff = function($k) use (&$_makeAff) { 
+    return function() use(&$k) { 
         $fiber = \Fiber::getCurrent(); 
         $isDone = false;
         $result = null;
         $exception = null;
 
-        $canceler = $k(function($res) use(&$isLeft, &$fromLeft, &$fromRight, &$fiber, &$isDone, &$result, &$exception) { 
-            return function() use(&$isLeft, &$fromLeft, &$fromRight, &$fiber, &$isDone, &$result, &$exception, &$res) { 
+        $canceler = $k(function($res) use(&$fiber, &$isDone, &$result, &$exception) { 
+            return function() use(&$fiber, &$isDone, &$result, &$exception, &$res) { 
                 $isDone = true;
-                if ($isLeft($res)) {
-                    $exception = $fromLeft($res);
+                if (is_object($res) && $res->tag === "Left") {
+                    $exception = $res->value0;
                 } else {
-                    $result = $fromRight($res);
+                    $result = $res->value0;
                 }
                 
                 if ($fiber && $fiber->isSuspended()) { 
@@ -436,7 +430,7 @@ $exports['_fork'] = $_fork;
 $exports['_delay'] = $_delay;
 $exports['_makeSupervisedFiber'] = $_makeSupervisedFiber;
 $exports['_killAll'] = $_killAll;
-$exports['_makeAff'] = $_makeAff;
+$exports['makeAff'] = $_makeAff;
 $exports['_throwError'] = $_throwError;
 $exports['_catchError'] = $_catchError;
 $exports['generalBracket'] = $generalBracket;
