@@ -133,8 +133,8 @@ $_bind = function($aff, $f = null) use (&$_bind) {
     return function() use(&$aff, &$f) { return new PhpursAffBind($aff, $f); };
 };
 $_liftEffect = function($eff) use (&$_liftEffect) { return $eff; };
-$_makeFiber = function($util, $aff = null) use (&$_makeFiber) { 
-    if (\func_num_args() < 2) {
+$_makeFiber = function($isLeft, $unsafeFromLeft, $unsafeFromRight, $Left, $Right, $aff = null) use (&$_makeFiber) { 
+    if (\func_num_args() < 6) {
         $__args = \func_get_args();
         return function(...$more) use ($__args, &$_makeFiber) {
             return $_makeFiber(...\array_merge($__args, $more));
@@ -197,7 +197,13 @@ $_delay = function($right, $ms) use (&$_delay) {
 $_makeSupervisedFiber = $_makeFiber;
 $_killAll = function($err, $sup, $cb) use (&$_killAll) { return function() { return function(){}; }; };
 
-$_makeAff = function($k) use (&$_makeAff) { 
+$_makeAff = function($isLeft, $unsafeFromLeft, $unsafeFromRight, $Left, $Right, $k = null) use (&$_makeAff) { 
+    if (\func_num_args() < 6) {
+        $__args = \func_get_args();
+        return function(...$more) use ($__args, &$_makeAff) {
+            return $_makeAff(...\array_merge($__args, $more));
+        };
+    }
     return function() use(&$k) { 
         $fiber = \Fiber::getCurrent(); 
         $isDone = false;
