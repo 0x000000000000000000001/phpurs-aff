@@ -113,7 +113,7 @@ function phpursRunAffTrampoline($aff) {
 }
 }
 
-$_pure = function($x) use (&$_pure) { return function() use(&$x) { return $x; }; };
+$_pure = function($x) use (&$_pure) { return function() use($x) { return $x; }; };
 $_map = function($f, $aff = null) use (&$_map) {
     if (\func_num_args() < 2) {
         $__args = \func_get_args();
@@ -121,7 +121,7 @@ $_map = function($f, $aff = null) use (&$_map) {
             return $_map(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$f, &$aff) { return new PhpursAffMap($f, $aff); };
+    return function() use($f, $aff) { return new PhpursAffMap($f, $aff); };
 };
 $_bind = function($aff, $f = null) use (&$_bind) {
     if (\func_num_args() < 2) {
@@ -130,7 +130,7 @@ $_bind = function($aff, $f = null) use (&$_bind) {
             return $_bind(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$aff, &$f) { return new PhpursAffBind($aff, $f); };
+    return function() use($aff, $f) { return new PhpursAffBind($aff, $f); };
 };
 $_liftEffect = function($eff) use (&$_liftEffect) { return $eff; };
 $_makeFiber = function($isLeft, $unsafeFromLeft, $unsafeFromRight, $Left, $Right, $aff = null) use (&$_makeFiber) { 
@@ -140,7 +140,7 @@ $_makeFiber = function($isLeft, $unsafeFromLeft, $unsafeFromRight, $Left, $Right
             return $_makeFiber(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$aff) { 
+    return function() use($aff) { 
         $fiber = new \Fiber(function() use ($aff) { phpursRunAffTrampoline($aff); }); 
         $fiber->start(); 
         return (object)['run' => function() {}, 'join' => function($k) { return function() { return function(){}; }; }]; 
@@ -153,9 +153,9 @@ $_fork = function($immediate, $aff = null) use (&$_fork) {
             return $_fork(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$aff) { 
+    return function() use($aff) { 
         $fiber = new \Fiber(function() use ($aff) { phpursRunAffTrampoline($aff); }); 
-        \Revolt\EventLoop::queue(function() use(&$fiber) { $fiber->start(); }); 
+        \Revolt\EventLoop::queue(function() use($fiber) { $fiber->start(); }); 
         return (object)['run' => function() {}, 'join' => function($k){ return function(){ return function(){}; }; }]; 
     };
 };
@@ -180,13 +180,13 @@ $_delay = function($right, $ms) use (&$_delay) {
             if ($shouldYield) {
                 $ticks = 0;
                 $lastYield = \hrtime(true);
-                \Revolt\EventLoop::queue(function() use(&$fiber) { 
+                \Revolt\EventLoop::queue(function() use($fiber) { 
                     if ($fiber) $fiber->resume(); 
                 }); 
                 if ($fiber) \Fiber::suspend(); 
             }
         } else {
-            \Revolt\EventLoop::delay($ms / 1000, function() use(&$fiber) { 
+            \Revolt\EventLoop::delay($ms / 1000, function() use($fiber) { 
                 if ($fiber) $fiber->resume(); 
             }); 
             if ($fiber) \Fiber::suspend(); 
@@ -204,14 +204,14 @@ $_makeAff = function($isLeft, $unsafeFromLeft, $unsafeFromRight, $Left, $Right, 
             return $_makeAff(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$k) { 
+    return function() use($k) { 
         $fiber = \Fiber::getCurrent(); 
         $isDone = false;
         $result = null;
         $exception = null;
 
-        $canceler = $k(function($res) use(&$fiber, &$isDone, &$result, &$exception) { 
-            return function() use(&$fiber, &$isDone, &$result, &$exception, &$res) { 
+        $canceler = $k(function($res) use($fiber, &$isDone, &$result, &$exception) { 
+            return function() use($fiber, &$isDone, &$result, &$exception, $res) { 
                 $isDone = true;
                 if (is_object($res) && $res->tag === "Left") {
                     $exception = $res->value0;
@@ -246,7 +246,7 @@ $_makeAff = function($isLeft, $unsafeFromLeft, $unsafeFromRight, $Left, $Right, 
     }; 
 };
 
-$_throwError = function($err) use (&$_throwError) { return function() use(&$err) { throw $err; }; };
+$_throwError = function($err) use (&$_throwError) { return function() use($err) { throw $err; }; };
 $_catchError = function($aff, $f = null) use (&$_catchError) {
     if (\func_num_args() < 2) {
         $__args = \func_get_args();
@@ -254,7 +254,7 @@ $_catchError = function($aff, $f = null) use (&$_catchError) {
             return $_catchError(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$aff, &$f) { return new PhpursAffCatch($aff, $f); };
+    return function() use($aff, $f) { return new PhpursAffCatch($aff, $f); };
 };
 $generalBracket = function($acq, $cond = null, $use = null) use (&$generalBracket) {
     if (\func_num_args() < 3) {
@@ -263,7 +263,7 @@ $generalBracket = function($acq, $cond = null, $use = null) use (&$generalBracke
             return $generalBracket(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$acq, &$use) { return new PhpursAffBracket($acq, $use); }; 
+    return function() use($acq, $use) { return new PhpursAffBracket($acq, $use); }; 
 };
 $_parAffMap = $_map;
 
@@ -274,7 +274,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
             return $_parAffApply(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$aff1, &$aff2) { 
+    return function() use($aff1, $aff2) { 
         $parent = \Fiber::getCurrent();
         $isDone = false; 
         $completed = 0;
@@ -282,7 +282,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
         $res2 = null;
         $error = null;
 
-        $f1 = new \Fiber(function() use(&$aff1, &$isDone, &$completed, &$res1, &$error, $parent) {
+        $f1 = new \Fiber(function() use($aff1, &$isDone, &$completed, &$res1, &$error, $parent) {
             try {
                 $res1 = phpursRunAffTrampoline($aff1);
                 if (!$isDone) {
@@ -309,7 +309,7 @@ $_parAffApply = function($aff1, $aff2 = null) use (&$_parAffApply) {
             }
         });
 
-        $f2 = new \Fiber(function() use(&$aff2, &$isDone, &$completed, &$res2, &$error, $parent) {
+        $f2 = new \Fiber(function() use($aff2, &$isDone, &$completed, &$res2, &$error, $parent) {
             try {
                 $res2 = phpursRunAffTrampoline($aff2);
                 if (!$isDone) {
@@ -357,14 +357,14 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
             return $_parAffAlt(...\array_merge($__args, $more));
         };
     }
-    return function() use(&$aff1, &$aff2) { 
+    return function() use($aff1, $aff2) { 
         $parent = \Fiber::getCurrent();
         $isDone = false;
         $result = null;
         $doneCount = 0;
         $error2 = null;
 
-        $f1 = new \Fiber(function() use(&$aff1, &$isDone, &$result, &$doneCount, &$error2, $parent) {
+        $f1 = new \Fiber(function() use($aff1, &$isDone, &$result, &$doneCount, &$error2, $parent) {
             try {
                 $res = phpursRunAffTrampoline($aff1);
                 if (!$isDone) {
@@ -389,7 +389,7 @@ $_parAffAlt = function($aff1, $aff2 = null) use (&$_parAffAlt) {
             }
         });
 
-        $f2 = new \Fiber(function() use(&$aff2, &$isDone, &$result, &$doneCount, &$error2, $parent) {
+        $f2 = new \Fiber(function() use($aff2, &$isDone, &$result, &$doneCount, &$error2, $parent) {
             try {
                 $res = phpursRunAffTrampoline($aff2);
                 if (!$isDone) {
