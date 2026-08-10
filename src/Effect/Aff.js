@@ -1090,7 +1090,7 @@ export function _parAffAlt(aff1) {
   };
 }
 
-export const makeAff = Aff.Async;
+export const _makeAff = Aff.Async;
 
 export function generalBracket(acquire) {
   return function (options) {
