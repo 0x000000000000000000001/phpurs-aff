@@ -256,6 +256,8 @@ test_general_bracket = assert "bracket/general" do
   r3 <- try $ joinFiber f3
 
   r4 <- readRef ref
+  liftEffect $ Console.log ("r4: " <> r4)
+  liftEffect $ Console.log ("r4: " <> r4)
   pure (isLeft r1 && isLeft r2 && isRight r3 && r4 == "foofoo/kill/zbarbar/throw/bbazcbaz/release/c")
 
 test_supervise :: Aff Unit
@@ -544,6 +546,7 @@ test_parallel_mixed = assert "parallel/mixed" do
         )
   delay (Milliseconds 20.0)
   r4 <- readRef ref
+  liftEffect $ Console.log ("r4: " <> r4)
   pure (r1 == "a" && r2 == "b" && r3 == "de" && r4 == "abde")
 
 test_kill_parallel_alt :: Aff Unit

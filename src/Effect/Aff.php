@@ -29,10 +29,153 @@ class PhpursAffCatch {
 
 class PhpursAffBracket {
     public $acq;
+    public $cond;
     public $use;
-    public function __construct($acq, $use) {
+    public function __construct($acq, $cond, $use) {
         $this->acq = $acq;
+        $this->cond = $cond;
         $this->use = $use;
+    }
+}
+
+class PhpursAffKillException extends \Exception {
+    public $error;
+    public function __construct($error) {
+        $this->error = $error;
+        parent::__construct("Fiber killed");
+    }
+}
+
+class PhpursFiberObj {
+    public $fiber;
+    public $activeCanceler;
+    public static $fiberMap = null;
+    public $isDone = false;
+    public $result = null;
+    public $joiners = [];
+    public $run;
+    public $join;
+    public $isSuspended;
+    public $onComplete;
+    public $kill;
+
+    public function __construct($fiber) {
+        $this->fiber = $fiber;
+        $this->activeCanceler = null;
+        if (self::$fiberMap === null) {
+            self::$fiberMap = new \WeakMap();
+        }
+        if ($fiber) {
+            self::$fiberMap[$fiber] = $this;
+        }
+
+        $this->run = function() use ($fiber) {
+            if ($fiber && $fiber->isStarted() === false) {
+                \Revolt\EventLoop::queue(function() use($fiber) { 
+                    if ($fiber->isStarted() === false) {
+                        $fiber->start();
+                    }
+                });
+            }
+        };
+        
+        $this->join = function($k) {
+            return function() use($k) {
+                if ($this->isDone) {
+                    $cb = $k($this->result);
+                    $cb();
+                } else {
+                    $this->joiners[] = $k;
+                }
+                ($this->run)();
+                return function() {};
+            };
+        };
+        
+        $this->onComplete = function($cb) {
+            return function() {};
+        };
+        
+        $this->isSuspended = function() {
+            return false;
+        };
+        
+        $this->kill = function($error, $cb) {
+            return function() use($error, $cb) {
+                if ($this->isDone) {
+                    $Right = $GLOBALS['Data_Either_Right'] ?? function($x) { return (object)['tag' => 'Right', 'value0' => $x]; };
+                    $fn = $cb($Right(null));
+                    $fn();
+                    return function() {};
+                }
+                
+                $this->activeCanceler = $error;
+                
+                // Throw kill exception if fiber is suspended
+                if ($this->fiber && $this->fiber->isSuspended()) {
+                    \Revolt\EventLoop::queue(function() use($error) {
+                        if ($this->fiber && $this->fiber->isSuspended()) {
+                            $this->fiber->throw(new PhpursAffKillException($error));
+                        }
+                    });
+                }
+                
+                $Right = $GLOBALS['Data_Either_Right'] ?? function($x) { return (object)['tag' => 'Right', 'value0' => $x]; };
+                $fn = $cb($Right(null));
+                $fn();
+                return function() {};
+            };
+        };
+    }
+    
+    public function finish($either) {
+        $this->isDone = true;
+        $this->result = $either;
+        foreach ($this->joiners as $k) {
+            \Revolt\EventLoop::queue(function() use($k, $either) { 
+                $cb = $k($either);
+                $cb(); 
+            });
+        }
+        $this->joiners = [];
+    }
+
+    public function kill($err, $k, $Right, $unit) {
+        $cancelFiber = null;
+        if ($this->fiber) {
+            if ($this->fiber->isSuspended() || $this->fiber->isStarted() === false) {
+                if ($this->activeCanceler !== null) {
+                    $affCanceler = ($this->activeCanceler)($err);
+                    
+                    $cancelFiber = new \Fiber(function() use($affCanceler, $err, $k, $Right, $unit) {
+                        try {
+                            phpursRunAffTrampoline($affCanceler);
+                        } catch (\Throwable $e) {}
+                        
+                        if ($this->fiber && $this->fiber->isSuspended()) {
+                            $this->fiber->throw(new PhpursAffKillException($err));
+                        }
+                        return $k($Right($unit))();
+                    });
+                } else {
+                    $cancelFiber = new \Fiber(function() use($err, $k, $Right, $unit) {
+                        if ($this->fiber && $this->fiber->isSuspended()) {
+                            $this->fiber->throw(new PhpursAffKillException($err));
+                        }
+                        return $k($Right($unit))();
+                    });
+                }
+            } else {
+                return $k($Right($unit))();
+            }
+        }
+        
+        if ($cancelFiber) {
+            $cancelFiber->start();
+            // Since this runs in a separate fiber, we just let it execute.
+        } else {
+            $k($Right($unit))();
+        }
     }
 }
 
@@ -62,9 +205,46 @@ function phpursRunAffTrampoline($aff) {
                 $current = $res->aff;
                 continue;
             } elseif ($res instanceof PhpursAffBracket) {
-                $stack[] = ['type' => 'bracket_acq', 'use' => $res->use];
-                $current = $res->acq;
-                continue;
+                $acq = $res->acq;
+                $cond = $res->cond;
+                $use = $res->use;
+                
+                try {
+                    $resource = phpursRunAffTrampoline($acq);
+                } catch (\Throwable $e) {
+                    throw $e;
+                }
+                
+                try {
+                    $useResult = phpursRunAffTrampoline($use($resource));
+                    
+                    // Completed!
+                    try {
+                        phpursRunAffTrampoline(($cond->completed)($useResult)($resource));
+                    } catch (\Throwable $e) {
+                        throw $e;
+                    }
+                    
+                    $res = $useResult;
+                } catch (\Throwable $err) {
+                    if ($err instanceof PhpursAffKillException) {
+                        // Killed!
+                        try {
+                            phpursRunAffTrampoline(($cond->killed)($err->error)($resource));
+                        } catch (\Throwable $e) {
+                            throw $e;
+                        }
+                        throw $err;
+                    } else {
+                        // Failed!
+                        try {
+                            phpursRunAffTrampoline(($cond->failed)($err)($resource));
+                        } catch (\Throwable $e) {
+                            throw $e;
+                        }
+                        throw $err;
+                    }
+                }
             }
             
             while (true) {
@@ -83,16 +263,17 @@ function phpursRunAffTrampoline($aff) {
                     $res = $f($res);
                 } elseif ($frame['type'] === 'catch') {
                     // Success value passed through
-                } elseif ($frame['type'] === 'bracket_acq') {
-                    $use = $frame['use'];
-                    $current = $use($res);
-                    break;
                 }
             }
         } catch (\Throwable $e) {
+            if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
             if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { 
                 echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; 
                 \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); 
+            }
+            
+            if ($e instanceof PhpursAffKillException) {
+                throw $e;
             }
             
             $caught = false;
@@ -122,17 +303,49 @@ $_bind = function($aff, $f) use (&$_bind) {
 };
 $_liftEffect = function($eff) use (&$_liftEffect) { return $eff; };
 $_makeFiber = function($isLeft, $unsafeFromLeft, $unsafeFromRight, $Left, $Right, $aff) use (&$_makeFiber) {
-    return function() use($aff) { 
-        $fiber = new \Fiber(function() use ($aff) { phpursRunAffTrampoline($aff); }); 
+    return function() use($aff, $Left, $Right) { 
+        $fiber = new \Fiber(function() use ($aff, &$obj, $Left, $Right) { 
+            try {
+                $res = phpursRunAffTrampoline($aff);
+                $obj->finish($Right($res));
+            } catch (\Throwable $e) {
+                if ($e instanceof PhpursAffKillException) {
+                    // echo "\nFATAL ERROR IN FIBER: " . $e->getMessage() . "\n";
+                    if ($e instanceof PhpursAffKillException) { $obj->finish($Left($e->error)); } else { $obj->finish($Left($e)); }
+                } else {
+                    // echo "\nFATAL ERROR IN FIBER: " . $e->getMessage() . "\n";
+                    if ($e instanceof PhpursAffKillException) { $obj->finish($Left($e->error)); } else { $obj->finish($Left($e)); }
+                }
+            }
+        }); 
+        $obj = new PhpursFiberObj($fiber);
         $fiber->start(); 
-        return (object)['run' => function() {}, 'join' => function($k) { return function() { return function(){}; }; }]; 
+        return $obj; 
     }; 
 };
 $_fork = function($immediate, $aff) use (&$_fork) {
-    return function() use($aff) { 
-        $fiber = new \Fiber(function() use ($aff) { phpursRunAffTrampoline($aff); }); 
-        \Revolt\EventLoop::queue(function() use($fiber) { $fiber->start(); }); 
-        return (object)['run' => function() {}, 'join' => function($k){ return function(){ return function(){}; }; }]; 
+    return function() use($aff, $immediate) { 
+        $Left = $GLOBALS['Data_Either_Left'];
+        $Right = $GLOBALS['Data_Either_Right'];
+        $fiber = new \Fiber(function() use ($aff, &$obj, $Left, $Right) { 
+            try {
+                $res = phpursRunAffTrampoline($aff);
+                $obj->finish($Right($res));
+            } catch (\Throwable $e) {
+                if ($e instanceof PhpursAffKillException) {
+                    // echo "\nFATAL ERROR IN FIBER: " . $e->getMessage() . "\n";
+                    if ($e instanceof PhpursAffKillException) { $obj->finish($Left($e->error)); } else { $obj->finish($Left($e)); }
+                } else {
+                    // echo "\nFATAL ERROR IN FIBER: " . $e->getMessage() . "\n";
+                    if ($e instanceof PhpursAffKillException) { $obj->finish($Left($e->error)); } else { $obj->finish($Left($e)); }
+                }
+            }
+        }); 
+        $obj = new PhpursFiberObj($fiber);
+        if ($immediate) {
+            ($obj->run)();
+        }
+        return $obj; 
     };
 };
 $_delay = function($right, $ms) use (&$_delay) { 
@@ -157,17 +370,17 @@ $_delay = function($right, $ms) use (&$_delay) {
                 $ticks = 0;
                 $lastYield = \hrtime(true);
                 \Revolt\EventLoop::queue(function() use($fiber) { 
-                    if ($fiber) $fiber->resume(); 
+                    if ($fiber && $fiber->isSuspended()) $fiber->resume(); 
                 }); 
                 if ($fiber) \Fiber::suspend(); 
             }
         } else {
             \Revolt\EventLoop::delay($ms / 1000, function() use($fiber) { 
-                if ($fiber) $fiber->resume(); 
+                if ($fiber && $fiber->isSuspended()) $fiber->resume(); 
             }); 
             if ($fiber) \Fiber::suspend(); 
         }
-        return $right(null); 
+        return null; 
     }; 
 };
 $_makeSupervisedFiber = $_makeFiber;
@@ -221,7 +434,7 @@ $_catchError = function($aff, $f) use (&$_catchError) {
     return function() use($aff, $f) { return new PhpursAffCatch($aff, $f); };
 };
 $generalBracket = function($acq, $cond, $use) use (&$generalBracket) {
-    return function() use($acq, $use) { return new PhpursAffBracket($acq, $use); }; 
+    return function() use($acq, $cond, $use) { return new PhpursAffBracket($acq, $cond, $use); }; 
 };
 $_parAffMap = $_map;
 
@@ -248,7 +461,9 @@ $_parAffApply = function($aff1, $aff2) use (&$_parAffApply) {
                         }
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 if (!$isDone) {
                     $isDone = true;
                     $error = $e;
@@ -275,7 +490,9 @@ $_parAffApply = function($aff1, $aff2) use (&$_parAffApply) {
                         }
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 if (!$isDone) {
                     $isDone = true;
                     $error = $e;
@@ -322,7 +539,9 @@ $_parAffAlt = function($aff1, $aff2) use (&$_parAffAlt) {
                         });
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 $doneCount++;
                 if ($doneCount === 2 && !$isDone) {
                     $isDone = true;
@@ -347,7 +566,9 @@ $_parAffAlt = function($aff1, $aff2) use (&$_parAffAlt) {
                         });
                     }
                 }
-            } catch (\Throwable $e) { if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
+            } catch (\Throwable $e) { if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { echo "\n\n!!! GLOBAL FATAL ERROR CAUGHT IN AFF:\n" . $e->getTraceAsString() . "\n\n"; } if ($e instanceof \FiberError) { echo "\n\n!!! FIBER ERROR INSIDE FIBER:\n" . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n"; }
+            if (strpos($e->getMessage(), 'Object of class stdClass') !== false) { \file_put_contents('/tmp/aff_caught.log', 'CAUGHT: ' . \get_class($e) . ' ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND); }
                 $error2 = $e;
                 $doneCount++;
                 if ($doneCount === 2 && !$isDone) {
