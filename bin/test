@@ -29,7 +29,18 @@ echo "=== Generating PHP code with phpurs ==="
 
 echo "=== Running PHP test script ==="
 if [ -f "output/Test.Main/main.mod.php" ]; then
-    php -d auto_prepend_file=vendor/autoload.php output/Test.Main/main.mod.php
+    LOG=$(mktemp "${TMPDIR:-/tmp}/phpurs-aff-tests.XXXXXX")
+    set +e
+    php -d memory_limit=512M -d auto_prepend_file=vendor/autoload.php output/Test.Main/main.mod.php | tee "$LOG"
+    status=${PIPESTATUS[0]}
+    set -e
+    if [ "$status" -ne 0 ] || ! grep -q "ALL TESTS FINISHED" "$LOG"; then
+        echo ""
+        echo -e "\033[0;31m[FAILED]\033[0m Test suite did not complete (status $status)"
+        rm -f "$LOG"
+        exit 1
+    fi
+    rm -f "$LOG"
 else
     echo "No output/Test.Main/main.mod.php found."
     exit 1

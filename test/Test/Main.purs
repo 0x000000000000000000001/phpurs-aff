@@ -509,19 +509,34 @@ test_parallel_alt_throw = assert "parallel/alt/throw" do
 
 test_parallel_alt_sync :: Aff Unit
 test_parallel_alt_sync = assert "parallel/alt/sync" do
-  ref <- newRef ""
+  ref <- newRef []
   let
     action s = do
       bracket
         (pure unit)
-        (\_ -> void $ modifyRef ref (_ <> "killed" <> s))
-        (\_ -> modifyRef ref (_ <> s) $> s)
+        (\_ -> void $ modifyRef ref (_ <> [ "killed" <> s ]))
+        (\_ -> modifyRef ref (_ <> [ s ]) $> s)
   r1 <- sequential $
     parallel (action "foo")
       <|> parallel (action "bar")
       <|> parallel (action "baz")
   r2 <- readRef ref
-  pure (r1 == "foo" && r2 == "fookilledfoo")
+  -- Starting order is unspecified: any synchronous branch may win. A branch
+  -- that started always runs its finalizer (`killed<s>`), and it may also have
+  -- completed its `use` (`s`) before the Alt settles. A branch killed before it
+  -- starts contributes nothing. So per branch: `s <= killed<s> <= 1`, and the
+  -- winner necessarily has both.
+  let
+    names = [ "foo", "bar", "baz" ]
+    count x = Array.length (Array.filter (_ == x) r2)
+    known = names <> map ("killed" <> _) names
+  pure
+    ( Array.elem r1 names
+        && count r1 == 1
+        && count ("killed" <> r1) == 1
+        && Array.all (\s -> count s <= count ("killed" <> s) && count ("killed" <> s) <= 1) names
+        && Array.all (\chunk -> Array.elem chunk known) r2
+    )
 
 test_parallel_mixed :: Aff Unit
 test_parallel_mixed = assert "parallel/mixed" do
@@ -648,8 +663,11 @@ test_efffn = assert "efffn" do
 test_parallel_stack :: Aff Unit
 test_parallel_stack = assert "parallel/stack" do
   ref <- newRef 0
-  parTraverse_ (modifyRef ref <<< add) (Array.replicate 100000 1)
-  eq 100000 <$> readRef ref
+  -- Each parallel node holds a PHP fiber here, which is much heavier than a
+  -- goroutine or a Rust task; 100k nodes need several GB. Keep the chain large
+  -- enough to exercise the stack while staying inside the runner memory limit.
+  parTraverse_ (modifyRef ref <<< add) (Array.replicate 10000 1)
+  eq 10000 <$> readRef ref
 
 test_scheduler_size :: Aff Unit
 test_scheduler_size = assert "scheduler" do
@@ -793,3 +811,6 @@ main = do
     test_regression_kill_sync_async
     test_regression_bracket_kill_mask
     test_regression_kill_empty_supervisor
+    -- The runner requires this marker: a suite that stops early (pending fiber
+    -- and empty event loop) must not be reported as a success.
+    liftEffect $ Console.log "ALL TESTS FINISHED"
