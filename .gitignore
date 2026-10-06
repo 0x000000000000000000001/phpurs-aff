@@ -16,3 +16,4 @@ package-lock.json
 .DS_Store
 .spago
 .psc-ide-port
+/composer-setup.php
