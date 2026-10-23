@@ -1,49 +1,6 @@
 #!/usr/bin/env bash
-set -e
-cd "$(dirname "$0")/.."
+set -euo pipefail
 
-CLEAN=0
-for arg in "$@"; do
-  if [ "$arg" == "-c" ] || [ "$arg" == "--clean" ]; then
-    CLEAN=1
-  fi
-done
-
-if [ "$CLEAN" == "1" ]; then
-  COMPILER_DIR="../phpurs"
-  echo "=== Recompiling ${COMPILER_DIR} ==="
-  (cd "${COMPILER_DIR}" && npm run build) || { echo "Compiler build failed"; exit 1; }
-fi
-
-# Remove cache for safety
-rm -rf output
-
-rm -f spago.yaml
-ln -s spago.php.yaml spago.yaml
-
-echo "=== Building project with spago ==="
-spago build || { echo "Spago build failed"; exit 1; }
-
-echo "=== Generating PHP code with phpurs ==="
-../phpurs/bin/phpurs --main Test.Main || exit 1
-
-echo "=== Running PHP test script ==="
-if [ -f "output/Test.Main/main.mod.php" ]; then
-    LOG=$(mktemp "${TMPDIR:-/tmp}/phpurs-aff-tests.XXXXXX")
-    set +e
-    php -d memory_limit=512M -d auto_prepend_file=vendor/autoload.php output/Test.Main/main.mod.php | tee "$LOG"
-    status=${PIPESTATUS[0]}
-    set -e
-    if [ "$status" -ne 0 ] || ! grep -q "ALL TESTS FINISHED" "$LOG"; then
-        echo ""
-        echo -e "\033[0;31m[FAILED]\033[0m Test suite did not complete (status $status)"
-        rm -f "$LOG"
-        exit 1
-    fi
-    rm -f "$LOG"
-else
-    echo "No output/Test.Main/main.mod.php found."
-    exit 1
-fi
-echo -e "
-✅ Tests passed successfully!"
+PACKAGE_DIR=$(cd "$(dirname "$0")/.." && pwd)
+export PHPURS_TEST_COMPLETION_MARKER="ALL TESTS FINISHED"
+exec "$PACKAGE_DIR/../phpurs/bin/test-package" "$PACKAGE_DIR" "$@"

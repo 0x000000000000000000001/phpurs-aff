@@ -1,11 +1,27 @@
 # Aff
 
+> PHPurs checkout: see the [PHP library development guide](https://github.com/0x000000000000000000001/phpurs/blob/main/docs/libraries.md) for the TAST toolchain, FFI conventions and validation commands. Run `./bin/test` from this package with the PHP toolchain prepared.
+
 [![CI](https://github.com/purescript-contrib/purescript-aff/workflows/CI/badge.svg?branch=main)](https://github.com/purescript-contrib/purescript-aff/actions?query=workflow%3ACI+branch%3Amain)
 [![Release](https://img.shields.io/github/release/purescript-contrib/purescript-aff.svg)](https://github.com/purescript-contrib/purescript-aff/releases)
 [![Pursuit](https://pursuit.purescript.org/packages/purescript-aff/badge)](https://pursuit.purescript.org/packages/purescript-aff)
 [![Maintainer: natefaubion](https://img.shields.io/badge/maintainer-natefaubion-teal.svg)](https://github.com/natefaubion)
 
 An asynchronous effect monad and threading model for PureScript.
+
+
+## PHP runtime development
+
+The PHP implementation lives in `src/Effect/Aff.php`. Its main responsibilities are:
+
+- `PhpursAffBind`, `PhpursAffMap` and `PhpursAffCatch` describe instructions consumed by `phpursRunAffTrampoline`.
+- `PhpursAffBracket` acquires resources and runs masked finalizers. A pending kill is delivered when the outermost acquisition mask ends.
+- `PhpursFiberObj` owns completion, joining, cancellation and parallel-child bookkeeping. `create` constructs a fiber; its callers choose when to start and register it.
+- `PhpursAffSupervisor` tracks supervised children. The exported closures connect these helpers to the PureScript FFI.
+
+Keep these helpers in the FFI file: phpurs embeds its contents in generated modules and bundles, so a relative include would not point back to this source directory. Preserve the distinction between queued callbacks, immediate effects and suspended fibers when changing the runtime.
+
+Run `php test/ffi.php` for direct runtime checks, including finalizers and cancellation. Run `bin/test` for the full PureScript-to-PHP suite. Both require the Composer dependencies declared in this package.
 
 ## Installation
 
